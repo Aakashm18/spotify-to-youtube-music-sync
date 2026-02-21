@@ -1,0 +1,31 @@
+name: "💡 Feature Request"
+description: "Suggest an idea or improvement"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any workarounds or other approaches?
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Would you be willing to contribute this feature?
+      options:
+        - label: "Yes, I'd like to submit a PR for this"

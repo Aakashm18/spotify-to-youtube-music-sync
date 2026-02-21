@@ -1,0 +1,92 @@
+name: "🎵 Spotify → YouTube Sync"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WHEN TO RUN
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  # Runs automatically once a day at 02:00 UTC
+  schedule:
+    - cron: "0 2 * * *"
+
+  # Allows manual trigger from the GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run mode (preview only, no changes)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      since:
+        description: "Only sync songs liked on or after this date (YYYY-MM-DD, optional)"
+        required: false
+        default: ""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONCURRENCY — prevent overlapping runs from spamming the YouTube API
+# ──────────────────────────────────────────────────────────────────────────────
+concurrency:
+  group: "spotify-to-youtube-music-sync"
+  cancel-in-progress: false   # Let in-flight runs finish before starting the next
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PERMISSIONS
+# ──────────────────────────────────────────────────────────────────────────────
+permissions:
+  contents: write   # Required to commit processed_tracks.json back to repo
+
+# ──────────────────────────────────────────────────────────────────────────────
+# JOBS
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+  sync:
+    name: "Sync liked songs to YouTube playlist"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30   # Guard against hung runs eating free minutes
+
+    steps:
+      # ── 1. Check out the repository ────────────────────────────────────────
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Full history so git push works correctly
+
+      # ── 2. Set up Python ───────────────────────────────────────────────────
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Install dependencies ────────────────────────────────────────────
+      - name: "📦 Install dependencies"
+        run: pip install -r requirements.txt
+
+      # ── 4. Run the sync ────────────────────────────────────────────────────
+      - name: "▶️  Run Spotify → YouTube Sync"
+        env:
+          # Spotify credentials
+          SPOTIFY_CLIENT_ID:     ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          # YouTube / Google credentials
+          YOUTUBE_CLIENT_ID:     ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          # Target YouTube playlist
+          PLAYLIST_ID:           ${{ secrets.PLAYLIST_ID }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ -n "${{ github.event.inputs.since }}" ]; then ARGS="$ARGS --since ${{ github.event.inputs.since }}"; fi
+          python youtube.py $ARGS
+
+      # ── 5. Commit the updated state file ──────────────────────────────────
+      - name: "💾 Commit updated processed_tracks.json"
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add processed_tracks.json
+          git diff --cached --quiet && echo "No changes to commit." || \
+            git commit -m "chore: update processed_tracks.json [skip ci]"
+          git push
